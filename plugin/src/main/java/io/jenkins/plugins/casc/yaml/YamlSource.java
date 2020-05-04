@@ -11,6 +11,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import javax.servlet.http.HttpServletRequest;
 
+import io.jenkins.plugins.casc.ConfigurationAsCode;
+import org.apache.commons.lang.StringUtils;
+import java.net.URLConnection;
+import java.nio.charset.Charset;
+import java.util.Base64;
+
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
@@ -21,7 +27,15 @@ public class YamlSource<T> implements AutoCloseable {
 
     public static final YamlReader<String> READ_FROM_URL = config -> {
         final URL url = URI.create(config).toURL();
-        return new InputStreamReader(url.openStream(), UTF_8);
+		URLConnection connection = url.openConnection();
+        String user = System.getenv(ConfigurationAsCode.CASC_JENKINS_CONFIG_USER_ENV);
+        String password = System.getenv(ConfigurationAsCode.CASC_JENKINS_CONFIG_PASSWORD_ENV);
+        String token = System.getenv(ConfigurationAsCode.CASC_JENKINS_CONFIG_TOKEN_ENV);
+        if ((StringUtils.isNotBlank(user) && StringUtils.isNotBlank(password))
+                || StringUtils.isNotBlank(token)) {
+            connection.setRequestProperty("Authorization", getAuthString(user, password, token));
+        }
+        return new InputStreamReader(connection.getInputStream(), UTF_8);
     };
 
     public static final YamlReader<Path> READ_FROM_PATH = Files::newBufferedReader;
@@ -82,5 +96,14 @@ public class YamlSource<T> implements AutoCloseable {
         } else if (reader instanceof InputStreamReader) {
             ((InputStreamReader) reader).close();
         }
+    }
+	
+    static String getAuthString(String user, String password, String token) {
+        if (StringUtils.isNotBlank(user) && StringUtils.isNotBlank(password)) {
+            return "Basic " + Base64.getEncoder().encodeToString((user + ":" + password).getBytes(Charset.forName("UTF-8")));
+        } else if (StringUtils.isNotBlank(token)) {
+            return "Bearer " + token;
+        }
+        return null;
     }
 }
